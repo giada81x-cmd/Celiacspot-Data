@@ -15,49 +15,46 @@ jobs:
         run: |
           python3 - <<'EOF'
           import json, urllib.request, urllib.parse, time
-          SERVERS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter']
-          GF = '["diet:gluten_free"~"^(yes|only|limited)$"]'
-
-          def query(s, w, n, e):
-              b = f'{s},{w},{n},{e}'
-              q = ('[out:json][timeout:180];('
-                   f'nwr{GF}["amenity"~"^(restaurant|fast_food|cafe|bar|pub|biergarten|ice_cream)$"]({b});'
-                   f'nwr{GF}["tourism"~"^(hotel|guest_house|hostel|motel|apartment)$"]({b});'
-                   f'nwr{GF}["shop"~"^(bakery|pastry|confectionery)$"]({b});'
-                   ');out center tags;')
-              for srv in SERVERS:
+          S = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter']
+          G = '["diet:gluten_free"~"^(yes|only|limited)$"]'
+          found, failed = {}, []
+          def query(b):
+              q = '[out:json][timeout:180];(nwr' + G + '["amenity"~"^(restaurant|fast_food|cafe|bar|pub|biergarten|ice_cream)$"](' + b + ');nwr' + G + '["tourism"~"^(hotel|guest_house|hostel|motel|apartment)$"](' + b + ');nwr' + G + '["shop"~"^(bakery|pastry|confectionery)$"](' + b + '););out center tags;'
+              for u in S:
                   try:
-                      req = urllib.request.Request(srv, data=urllib.parse.urlencode({'data': q}).encode(), headers={'User-Agent': 'CeliacSpot-data/1.0'})
-                      with urllib.request.urlopen(req, timeout=240) as r:
-                          return json.load(r).get('elements', [])
+                      r = urllib.request.urlopen(urllib.request.Request(u, data=urllib.parse.urlencode({'data': q}).encode(), headers={'User-Agent': 'CeliacSpot-data/1.0'}), timeout=240)
+                      return json.load(r).get('elements', [])
                   except Exception as ex:
-                      print('  fail', srv, ex)
-                      time.sleep(10)
-              return None
-
-          found = {}
-          failed = []
-
-          def tile(s, w, n, e, depth=0):
-              els = query(s, w, n, e)
+                      print('fail', u, ex); time.sleep(10)
+          def tile(s, w, n, e, d=0):
+              els = query(f'{s},{w},{n},{e}')
               if els is None:
-                  if depth < 3:
-                      ms, mw = (s + n) / 2, (w + e) / 2
-                      for t in [(s, w, ms, mw), (s, mw, ms, e), (ms, w, n, mw), (ms, mw, n, e)]:
-                          tile(*t, depth + 1)
-                  else:
-                      failed.append((s, w, n, e))
+                  if d < 3:
+                      a, o = (s + n) / 2, (w + e) / 2
+                      for t in [(s, w, a, o), (s, o, a, e), (a, w, n, o), (a, o, n, e)]: tile(*t, d + 1)
+                  else: failed.append((s, w, n, e))
                   return
-              for el in els:
-                  found[el['type'][0] + str(el['id'])] = el
-              print(f'{s},{w},{n},{e}: {len(els)} places, total {len(found)}')
-              time.sleep(2)
-
+              for x in els: found[x['type'][0] + str(x['id'])] = x
+              print(s, w, len(els), len(found)); time.sleep(2)
           for lat in range(-60, 80, 20):
-              for lon in range(-180, 180, 20):
-                  tile(lat, lon, lat + 20, lon + 20)
-
-          def cat(t):
-              if t.get('tourism'): return 'h'
-              a = t.get('amenity', '')
-              if a in ('
+              for lon in range(-180, 180, 20): tile(lat, lon, lat + 20, lon + 20)
+          C = {'cafe': 'c', 'ice_cream': 'c', 'bar': 'b', 'pub': 'b', 'biergarten': 'b'}
+          out = []
+          for k, x in found.items():
+              t = x.get('tags', {}); c = x.get('center') or {}
+              lat, lon = x.get('lat') or c.get('lat'), x.get('lon') or c.get('lon')
+              if not lat or not t.get('name'): continue
+              cat = 'h' if t.get('tourism') else ('c' if t.get('shop') else C.get(t.get('amenity'), 'r'))
+              addr = ' '.join(filter(None, [t.get('addr:street'), t.get('addr:housenumber'), t.get('addr:postcode'), t.get('addr:city')]))
+              out.append([k, t['name'], cat, t.get('diet:gluten_free'), round(lat, 5), round(lon, 5), addr, t.get('website') or t.get('contact:website') or '', t.get('phone') or t.get('contact:phone') or ''])
+          print('places:', len(out), 'failed:', len(failed))
+          if not out: raise SystemExit('no places')
+          json.dump(out, open('places.json', 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
+          EOF
+      - name: Save
+        run: |
+          git config user.name "celiacspot-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add places.json
+          git commit -m "Update places" || echo "no changes"
+          git push

@@ -36,7 +36,7 @@ jobs:
                   return
               els = query(f'{s},{w},{n},{e}')
               if els is None:
-                  if d < 2:
+                  if d < 3:
                       a, o = (s + n) / 2, (w + e) / 2
                       for t in [(s, w, a, o), (s, o, a, e), (a, w, n, o), (a, o, n, e)]: tile(*t, d + 1)
                   else: failed.append((s, w, n, e))
@@ -44,8 +44,8 @@ jobs:
               for x in els: found[x['type'][0] + str(x['id'])] = x
               print(f'{s},{w}: {len(els)} -> total {len(found)}')
               time.sleep(1)
-          for lat in range(-60, 90, 30):
-              for lon in range(-180, 180, 30): tile(lat, lon, lat + 30, lon + 30)
+          for lat in range(-60, 90, 10):
+              for lon in range(-180, 180, 10): tile(lat, lon, lat + 10, lon + 10)
           C = {'cafe': 'c', 'ice_cream': 'c', 'bar': 'b', 'pub': 'b', 'biergarten': 'b'}
           out = {}
           if failed and os.path.exists('places.json'):

@@ -1,0 +1,34 @@
+name: Merge translations
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'i18n/**'
+permissions:
+  contents: write
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Merge
+        run: |
+          python3 - <<'EOF'
+          import json, glob, os
+          out = {}
+          for f in sorted(glob.glob('i18n/*.json')):
+              code = os.path.splitext(os.path.basename(f))[0]
+              with open(f, encoding='utf-8') as fh:
+                  out[code] = json.load(fh)
+          with open('i18n.json', 'w', encoding='utf-8') as fh:
+              json.dump(out, fh, ensure_ascii=False)
+          print('languages:', list(out))
+          EOF
+      - name: Save
+        run: |
+          git pull --rebase || true
+          git config user.name "celiacspot-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add i18n.json
+          git commit -m "Merge translations" || echo "no changes"
+          git push
